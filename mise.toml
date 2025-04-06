@@ -1,0 +1,4 @@
+[tools]
+java = "17"
+scala-cli = "latest"
+"ubi:scalacenter/bloop" = "latest"
