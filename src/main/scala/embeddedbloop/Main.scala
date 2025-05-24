@@ -85,7 +85,7 @@ object Main {
       val threads = BloopThreads.create()
 
       val logger = new MyBloopRifleLogger(config)
-      val (connection, process) = Await.result(Bloop.connect(version, pwd, logger, threads), waitForConnectionSeconds.seconds)
+      val (connection, onComplete, process) = Await.result(Bloop.connect(version, pwd, logger, threads), waitForConnectionSeconds.seconds)
       val handler = new PumpStreamHandler(System.out, System.err, System.in)
       handler.setProcessOutputStream(connection.getInputStream)
       handler.setProcessInputStream(connection.getOutputStream)
@@ -97,8 +97,14 @@ object Main {
         safeClose("socket", connection.close())
         safeClose("handler", handler.stop())
         safeClose("threads", threads.shutdown())
+        safeClose("conComplete", {
+          Await.result(onComplete.future, 1.minute)
+        })
         if (stopServerOnExit) {
-          safeClose("process", process.destroy())
+          safeClose("process", {
+            process.destroy()
+            util.deleteDirectory(config.workingDir.toPath.resolve("bsp"))
+          })
         }
         latch.countDown()
       }))
@@ -120,10 +126,9 @@ object Main {
     try {
       run
     } catch {
-      case NonFatal(e) => {
+      case NonFatal(e) =>
         System.err.println(s"Closed ${name}, but error occured")
         e.printStackTrace(System.err)
-      }
     }
   }
 }
