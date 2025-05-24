@@ -76,7 +76,7 @@ object Bloop {
     }
   }
 
-  def connect(version: String, projectRoot: Path, logger: BloopRifleLogger, threads: BloopThreads): Future[(Socket, ProcessHandle)] = {
+  def connect(version: String, projectRoot: Path, logger: BloopRifleLogger, threads: BloopThreads): Future[(Socket, Promise[Unit], ProcessHandle)] = {
     val config = configFor(version, projectRoot)
     val maybeStartBloop = {
       val running = BloopRifle.check(config, logger)
@@ -126,7 +126,7 @@ object Bloop {
       )
       val finished = Promise[Unit]()
       conn.closed.map(_ => ()).onComplete(finished.tryComplete)
-      openConnection(conn, config.period, config.timeout)
+      (openConnection(conn, config.period, config.timeout), finished)
     }
 
     def getServerPid = Future {
@@ -136,8 +136,8 @@ object Bloop {
 
     for {
       _ <- maybeStartBloop
-      conn <- openBspConn
+      (socket, complete) <- openBspConn
       pid <- getServerPid
-    } yield (conn, pid)
+    } yield (socket, complete, pid)
   }
 }
