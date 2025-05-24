@@ -1,6 +1,7 @@
 package embeddedbloop
 
 import bloop.rifle.*
+import internal.BuildInfo as RifleBuildInfo
 import mainargs.{ParserForMethods, arg, main}
 import org.apache.commons.exec.PumpStreamHandler
 
@@ -14,7 +15,7 @@ import scala.util.control.NonFatal
 object Main {
 
   @main
-  def `setup-ide`(@arg version: String = "2.0.9", @arg intellij: Boolean = false, @arg stopServerOnExit: Boolean = true, @arg waitForConnectionSeconds: Int = 30): Unit = {
+  def `setup-ide`(@arg version: String = RifleBuildInfo.version, @arg intellij: Boolean = false, @arg stopServerOnExit: Boolean = true, @arg waitForConnectionSeconds: Int = 30): Unit = {
     Bloop.fetchBloopFrontend(version).fold(err => {
       System.err.println(s"Unable to fetch bloop ${version}")
       err.printStackTrace()
@@ -77,7 +78,7 @@ object Main {
   }
 
   @main
-  def bloop(@arg version: String = "2.0.10", @arg stopServerOnExit: Boolean = true, @arg waitForConnectionSeconds: Int = 30): Unit = {
+  def bloop(@arg version: String = RifleBuildInfo.version, @arg stopServerOnExit: Boolean = true, @arg waitForConnectionSeconds: Int = 30): Unit = {
     val pwd = Path.of(Properties.userDir)
 
     if (Files.exists(pwd.resolve(".bloop"))) {
