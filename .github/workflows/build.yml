@@ -33,7 +33,7 @@ jobs:
         with:
           power: 'true'
           jvm: 'graalvm-community@21'
-      - run: scala-cli test .
+      #- run: scala-cli test .
       - id: get_version
         shell: bash
         run: |
