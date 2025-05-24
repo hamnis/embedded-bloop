@@ -69,6 +69,10 @@ object Main {
         Files.writeString(bspXml, bspSbtIgnore)
         System.err.println(s"Installed ${bspXml}")
       }
+
+      if (!Files.exists(Path.of(pwd, ".bloop"))) {
+        System.err.println("Make sure you run sbt bloopInstall after this")
+      }
     }
   }
 
