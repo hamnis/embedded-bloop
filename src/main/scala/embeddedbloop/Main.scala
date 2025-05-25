@@ -15,7 +15,7 @@ import scala.util.control.NonFatal
 object Main {
 
   @main
-  def `setup-ide`(@arg version: String = RifleBuildInfo.version, @arg intellij: Boolean = false, @arg stopServerOnExit: Boolean = true, @arg waitForConnectionSeconds: Int = 30): Unit = {
+  def `setup-ide`(@arg version: String = RifleBuildInfo.version, @arg intellij: Boolean = false, @arg stopServerOnExit: Boolean = false, @arg waitForConnectionSeconds: Int = 30): Unit = {
     Bloop.fetchBloopFrontend(version).fold(err => {
       System.err.println(s"Unable to fetch bloop ${version}")
       err.printStackTrace()
@@ -78,7 +78,7 @@ object Main {
   }
 
   @main
-  def bloop(@arg version: String = RifleBuildInfo.version, @arg stopServerOnExit: Boolean = true, @arg waitForConnectionSeconds: Int = 30): Unit = {
+  def bloop(@arg version: String = RifleBuildInfo.version, @arg stopServerOnExit: Boolean = false, @arg waitForConnectionSeconds: Int = 30): Unit = {
     val pwd = Path.of(Properties.userDir)
 
     if (Files.exists(pwd.resolve(".bloop"))) {
@@ -86,7 +86,7 @@ object Main {
       val threads = BloopThreads.create()
 
       val logger = new MyBloopRifleLogger(config)
-      val (connection, onComplete, process) = Await.result(Bloop.connect(version, pwd, logger, threads), waitForConnectionSeconds.seconds)
+      val (connection, onComplete) = Await.result(Bloop.connect(version, pwd, logger, threads), waitForConnectionSeconds.seconds)
       val handler = new PumpStreamHandler(System.out, System.err, System.in)
       handler.setProcessOutputStream(connection.getInputStream)
       handler.setProcessInputStream(connection.getOutputStream)
@@ -103,7 +103,7 @@ object Main {
         })
         if (stopServerOnExit) {
           safeClose("process", {
-            process.destroy()
+            BloopRifle.exit(config, config.workingDir.toPath, logger)
             util.deleteDirectory(config.workingDir.toPath.resolve("bsp"))
           })
         }
@@ -118,6 +118,11 @@ object Main {
     }
   }
 
+  @main def exit(): Unit = {
+    val config = Bloop.configFor(RifleBuildInfo.version, Path.of(Properties.userDir))
+    val exitCode = BloopRifle.exit(config, config.workingDir.toPath, new MyBloopRifleLogger(config))
+    sys.exit(exitCode)
+  }
 
   def main(args: Array[String]): Unit = {
     ParserForMethods(this).runOrExit(args.toIndexedSeq)

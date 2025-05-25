@@ -76,7 +76,7 @@ object Bloop {
     }
   }
 
-  def connect(version: String, projectRoot: Path, logger: BloopRifleLogger, threads: BloopThreads): Future[(Socket, Promise[Unit], ProcessHandle)] = {
+  def connect(version: String, projectRoot: Path, logger: BloopRifleLogger, threads: BloopThreads): Future[(Socket, Promise[Unit])] = {
     val config = configFor(version, projectRoot)
     val maybeStartBloop = {
       val running = BloopRifle.check(config, logger)
@@ -129,15 +129,9 @@ object Bloop {
       (openConnection(conn, config.period, config.timeout), finished)
     }
 
-    def getServerPid = Future {
-      val pid = Files.readString(config.workingDir.toPath.resolve("bsp/pid"))
-      ProcessHandle.of(pid.toLong).orElseThrow(() => new RuntimeException("Missing pid file"))
-    }
-
     for {
       _ <- maybeStartBloop
       (socket, complete) <- openBspConn
-      pid <- getServerPid
-    } yield (socket, complete, pid)
+    } yield (socket, complete)
   }
 }
