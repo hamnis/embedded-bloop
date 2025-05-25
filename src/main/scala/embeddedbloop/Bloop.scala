@@ -62,7 +62,9 @@ object Bloop {
     val socketPath = bspDir.resolve(s"$pid-$uniqueFolderId")
 
     deleteSocketFile(socketPath)
-    BspConnectionAddress.UnixDomainSocket(socketPath.toFile)
+    val file = socketPath.toFile
+    file.deleteOnExit()
+    BspConnectionAddress.UnixDomainSocket(file)
   }
 
   //Delete the socket file if it already exists
