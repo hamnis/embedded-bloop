@@ -55,40 +55,41 @@ object Main
     )
   }
 
-  def setup(options: EmbeddedBloopOptions, disableSbtBloop: Boolean): IO[ExitCode] = IO
-    .blocking {
-      val pwd = Properties.userDir
-      val bloopPath = Path.of(pwd, ".bsp", "bloop.json")
-      val currentExecutable = ProcessHandle.current().info().command().get()
+  def setup(options: EmbeddedBloopOptions, disableSbtBloop: Boolean): IO[ExitCode] =
+    Bloop.fetchBloopFrontend(options.version) >> IO
+      .blocking {
+        val pwd = Properties.userDir
+        val bloopPath = Path.of(pwd, ".bsp", "bloop.json")
+        val currentExecutable = ProcessHandle.current().info().command().get()
 
-      val executable = if (currentExecutable.contains("mise")) {
-        List("mise", "x", "embedded-bloop")
-      } else if (currentExecutable.contains("java")) {
-        List("embedded-bloop")
-      } else {
-        List(currentExecutable)
-      }
-      val connectionFile = Bloop.ConnectionFile.default(
-        options.version,
-        List(
-          executable,
-          Some("bloop"),
-          Some(s"--bloop-version=${options.version}"),
-          Option.when(options.stopOnExit)("--stop-server-on-exit")
-        ).flatten
-      )
-      Files.createDirectories(bloopPath.getParent)
-      Files.writeString(
-        bloopPath,
-        connectionFile.asJson.spaces2,
-        StandardOpenOption.CREATE,
-        StandardOpenOption.WRITE,
-        StandardOpenOption.TRUNCATE_EXISTING)
-      System.err.println(s"Installed ${bloopPath}")
+        val executable = if (currentExecutable.contains("mise")) {
+          List("mise", "x", "embedded-bloop")
+        } else if (currentExecutable.contains("java")) {
+          List("embedded-bloop")
+        } else {
+          List(currentExecutable)
+        }
+        val connectionFile = Bloop.ConnectionFile.default(
+          options.version,
+          List(
+            executable,
+            Some("bloop"),
+            Some(s"--bloop-version=${options.version}"),
+            Option.when(options.stopOnExit)("--stop-server-on-exit")
+          ).flatten
+        )
+        Files.createDirectories(bloopPath.getParent)
+        Files.writeString(
+          bloopPath,
+          connectionFile.asJson.spaces2,
+          StandardOpenOption.CREATE,
+          StandardOpenOption.WRITE,
+          StandardOpenOption.TRUNCATE_EXISTING)
+        System.err.println(s"Installed ${bloopPath}")
 
-      if (disableSbtBloop && Files.exists(Path.of(pwd, "build.sbt"))) {
-        val bspSbtIgnore =
-          """<?xml version="1.0" encoding="UTF-8"?>
+        if (disableSbtBloop && Files.exists(Path.of(pwd, "build.sbt"))) {
+          val bspSbtIgnore =
+            """<?xml version="1.0" encoding="UTF-8"?>
           |<project version="4">
           |  <component name="BspSettings">
           |    <option name="linkedExternalProjectsSettings">
@@ -104,19 +105,19 @@ object Main
           |    </option>
           |  </component>
           |</project>""".stripMargin
-        val bspXml = Path.of(pwd, ".idea", "bsp.xml")
-        Files.createDirectories(bspXml.getParent)
-        if (!Files.exists(bspXml)) {
-          Files.writeString(bspXml, bspSbtIgnore)
-          System.err.println(s"Installed ${bspXml}")
-        }
+          val bspXml = Path.of(pwd, ".idea", "bsp.xml")
+          Files.createDirectories(bspXml.getParent)
+          if (!Files.exists(bspXml)) {
+            Files.writeString(bspXml, bspSbtIgnore)
+            System.err.println(s"Installed ${bspXml}")
+          }
 
-        if (!Files.exists(Path.of(pwd, ".bloop"))) {
-          System.err.println("Make sure you run sbt bloopInstall after this")
+          if (!Files.exists(Path.of(pwd, ".bloop"))) {
+            System.err.println("Make sure you run sbt bloopInstall after this")
+          }
         }
       }
-    }
-    .as(ExitCode.Success)
+      .as(ExitCode.Success)
 
   val threadResource =
     Resource.make(IO.delay(BloopThreads.create()))(t => IO.blocking(t.shutdown()))
@@ -132,7 +133,7 @@ object Main
 
   def bloop(opts: EmbeddedBloopOptions, pwd: Path): IO[ExitCode] = {
     val resources = for {
-      config <- Resource.eval(Bloop.configFor(opts.version, pwd))
+      config <- Bloop.configFor(opts.version, pwd)
       logger = new MyBloopRifleLogger(config)
       threads <- threadResource
       socket <- Bloop.connect(opts.version, pwd, logger, threads).timeout(opts.waitForConnection)
@@ -140,7 +141,7 @@ object Main
     } yield ExitCode.Success
 
     resources.onFinalize {
-      Bloop.configFor(opts.version, pwd).flatMap { config =>
+      Bloop.configFor(opts.version, pwd).use { config =>
         IO.whenA(opts.stopOnExit) {
           IO.blocking {
             val logger = new MyBloopRifleLogger(config)
@@ -162,7 +163,7 @@ object Main
   }
 
   def exit: IO[ExitCode] =
-    Bloop.configFor(RifleBuildInfo.version, Path.of(Properties.userDir)).flatMap { config =>
+    Bloop.configFor(RifleBuildInfo.version, Path.of(Properties.userDir)).use { config =>
       IO.blocking(BloopRifle.exit(config, config.workingDir.toPath, new MyBloopRifleLogger(config)))
         .map(ExitCode.apply)
     }

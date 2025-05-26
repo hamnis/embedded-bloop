@@ -19,6 +19,16 @@ import scala.util.control.NonFatal
 object Bloop {
   private val folderIdMap = TrieMap.empty[Path, Int]
   private val connectionCounter = new AtomicInteger()
+  private case class WorkDir(dir: Path) {
+    val bsp = dir.resolve("bsp")
+  }
+
+  private val workdir = IO.delay {
+    val embedded = ProjectDirectories.from("net", "hamnaberg", "embedded-bloop")
+    val cacheDir = Path.of(embedded.cacheDir)
+    val workdir = cacheDir.resolve("bloop")
+    WorkDir(workdir)
+  }
 
   def fetchBloopFrontend(version: String): IO[Seq[File]] =
     IO.fromFuture(IO.executionContext.flatMap(ec =>
@@ -34,31 +44,29 @@ object Bloop {
           .future()(ec)
       }))
 
-  def configFor(version: String, projectRoot: Path) =
-    fetchBloopFrontend(version).attempt.flatMap(frontend =>
-      IO.delay {
-        val embedded = ProjectDirectories.from("net", "hamnaberg", "embedded-bloop")
-        val cacheDir = Path.of(embedded.cacheDir)
-        val workdir = cacheDir.resolve("bloop")
-        val bspDir = workdir.resolve("bsp")
+  def configFor(version: String, projectRoot: Path): Resource[IO, BloopRifleConfig] = for {
+    frontend <- Resource.eval(fetchBloopFrontend(version).attempt)
+    work <- Resource.eval(workdir)
+    unixSocket <- setupUnixSocket(projectRoot = projectRoot, bspDir = work.bsp)
+    config <- Resource.eval(IO.delay {
+      BloopRifleConfig
+        .default(
+          BloopRifleConfig.Address.DomainSocket(work.bsp),
+          Function.const(frontend),
+          work.dir.toFile
+        )
+        .copy(
+          javaPath = sys.env
+            .get("JAVA_HOME")
+            .map(h => Path.of(h, "bin", "java").toString)
+            .getOrElse("java"),
+          bspSocketOrPort = Some(() => unixSocket),
+          retainedBloopVersion = BloopRifleConfig.AtLeast(BloopVersion(version))
+        )
+    })
+  } yield config
 
-        BloopRifleConfig
-          .default(
-            BloopRifleConfig.Address.DomainSocket(bspDir),
-            Function.const(frontend),
-            workdir.toFile
-          )
-          .copy(
-            javaPath = sys.env
-              .get("JAVA_HOME")
-              .map(h => Path.of(h, "bin", "java").toString)
-              .getOrElse("java"),
-            bspSocketOrPort = Some(() => setupUnixSocket(projectRoot, bspDir)),
-            retainedBloopVersion = BloopRifleConfig.AtLeast(BloopVersion(version))
-          )
-      })
-
-  private def setupUnixSocket(projectRoot: Path, bspDir: Path) = {
+  private def setupUnixSocket(projectRoot: Path, bspDir: Path) = Resource.make(IO.blocking {
     val pid = ProcessHandle.current().pid()
     if (!Files.exists(bspDir)) {
       Files.createDirectories(bspDir.getParent)
@@ -77,10 +85,8 @@ object Bloop {
     val socketPath = bspDir.resolve(s"$pid-$uniqueFolderId")
 
     deleteSocketFile(socketPath)
-    val file = socketPath.toFile
-    file.deleteOnExit()
-    BspConnectionAddress.UnixDomainSocket(file)
-  }
+    BspConnectionAddress.UnixDomainSocket(socketPath.toFile)
+  })(s => IO.blocking(deleteSocketFile(s.path.toPath)))
 
   // Delete the socket file if it already exists
   private def deleteSocketFile(path: Path) =
@@ -104,7 +110,7 @@ object Bloop {
       logger: BloopRifleLogger,
       threads: BloopThreads): Resource[IO, Socket] =
     for {
-      config <- Resource.eval(configFor(version, projectRoot))
+      config <- configFor(version, projectRoot)
       running <- Resource.eval(IO.blocking {
         BloopRifle.check(config, logger)
       })
