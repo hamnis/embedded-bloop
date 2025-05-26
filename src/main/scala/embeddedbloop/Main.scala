@@ -1,54 +1,94 @@
 package embeddedbloop
 
+import cats.syntax.all.*
+import cats.effect.implicits.*
+import com.monovore.decline.*
+import com.monovore.decline.effect.CommandIOApp
 import bloop.rifle.*
+import cats.effect.{ExitCode, IO, Resource}
 import internal.BuildInfo as RifleBuildInfo
-import mainargs.{ParserForMethods, arg, main}
+import io.circe.syntax.EncoderOps
 import org.apache.commons.exec.PumpStreamHandler
 
+import java.net.Socket
 import java.nio.file.{Files, Path, StandardOpenOption}
-import java.util.concurrent.CountDownLatch
-import scala.concurrent.Await
 import scala.concurrent.duration.*
 import scala.util.Properties
-import scala.util.control.NonFatal
 
-object Main {
+case class EmbeddedBloopOptions(
+    version: String,
+    stopOnExit: Boolean,
+    waitForConnection: FiniteDuration)
 
-  @main
-  def `setup-ide`(@arg version: String = RifleBuildInfo.version, @arg intellij: Boolean = false, @arg stopServerOnExit: Boolean = false, @arg waitForConnectionSeconds: Int = 30): Unit = {
-    Bloop.fetchBloopFrontend(version).fold(err => {
-      System.err.println(s"Unable to fetch bloop ${version}")
-      err.printStackTrace()
-      sys.exit(1)
-    }, _ => ())
+object Main
+    extends CommandIOApp(
+      "embedded-bloop",
+      "Bloop without the jank",
+      version = cli.build.BuildInfo.projectVersion.getOrElse("main")) {
+  override def main: Opts[IO[ExitCode]] = {
+    val bloopVersion = Opts
+      .option[String](
+        "bloop-version",
+        s"Which bloop version should we use. The default is ${RifleBuildInfo.version}")
+      .withDefault(RifleBuildInfo.version)
+    val disableSbtBloop = Opts
+      .flag("intellij-disable-sbt-bloop", "Disables \"export sbt projects to Bloop before import\"")
+      .orFalse
+    val stopServerOnExit =
+      Opts.flag("stop-server-on-exit", "Stop the bloop server when connection dies").orFalse
+    val waitForConnection = Opts
+      .option[FiniteDuration]("wait-for-connection", "Wait the duration for connection to server")
+      .withDefault(30.seconds)
+    val options: Opts[EmbeddedBloopOptions] =
+      (bloopVersion, stopServerOnExit, waitForConnection).mapN(EmbeddedBloopOptions.apply)
 
-    val pwd = Properties.userDir
-    val bloopPath = Path.of(pwd, ".bsp", "bloop.json")
-    val executable = "embedded-bloop"
-    val json =
-      s"""{
-         |  "name": "Bloop",
-         |  "version": "${version}",
-         |  "bspVersion": "2.1.1",
-         |  "languages": [
-         |    "scala",
-         |    "java"
-         |  ],
-         |  "argv": [
-         |    "$executable",
-         |    "bloop",
-         |    "--stop-server-on-exit=${stopServerOnExit}",
-         |    "--wait-for-connection-seconds=${waitForConnectionSeconds}"
-         |  ]
-         |}""".stripMargin
+    Opts.subcommands(
+      Command("setup-ide", "Installs embedded-bloop as bsp connection file")(
+        (options, disableSbtBloop).mapN(setup)
+      ),
+      Command("bloop", "Runs the embedded-bloop as a bsp server and connection")(
+        options.map(opts => IO.delay(Path.of(Properties.userDir)).flatMap(cwd => bloop(opts, cwd)))
+      ),
+      Command("exit", "Shutdown the server")(
+        Opts(exit)
+      )
+    )
+  }
 
-    Files.createDirectories(bloopPath.getParent)
-    Files.writeString(bloopPath, json, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)
-    System.err.println(s"Installed ${bloopPath}")
+  def setup(options: EmbeddedBloopOptions, disableSbtBloop: Boolean): IO[ExitCode] = IO
+    .blocking {
+      val pwd = Properties.userDir
+      val bloopPath = Path.of(pwd, ".bsp", "bloop.json")
+      val currentExecutable = ProcessHandle.current().info().command().get()
 
-    if (intellij && Files.exists(Path.of(pwd, "build.sbt"))) {
-      val bspSbtIgnore =
-        """<?xml version="1.0" encoding="UTF-8"?>
+      val executable = if (currentExecutable.contains("mise")) {
+        List("mise", "x", "embedded-bloop")
+      } else if (currentExecutable.contains("java")) {
+        List("embedded-bloop")
+      } else {
+        List(currentExecutable)
+      }
+      val connectionFile = Bloop.ConnectionFile.default(
+        options.version,
+        List(
+          executable,
+          Some("bloop"),
+          Some(s"--bloop-version=${options.version}"),
+          Option.when(options.stopOnExit)("--stop-server-on-exit")
+        ).flatten
+      )
+      Files.createDirectories(bloopPath.getParent)
+      Files.writeString(
+        bloopPath,
+        connectionFile.asJson.spaces2,
+        StandardOpenOption.CREATE,
+        StandardOpenOption.WRITE,
+        StandardOpenOption.TRUNCATE_EXISTING)
+      System.err.println(s"Installed ${bloopPath}")
+
+      if (disableSbtBloop && Files.exists(Path.of(pwd, "build.sbt"))) {
+        val bspSbtIgnore =
+          """<?xml version="1.0" encoding="UTF-8"?>
           |<project version="4">
           |  <component name="BspSettings">
           |    <option name="linkedExternalProjectsSettings">
@@ -64,77 +104,66 @@ object Main {
           |    </option>
           |  </component>
           |</project>""".stripMargin
-      val bspXml = Path.of(pwd, ".idea", "bsp.xml")
-      Files.createDirectories(bspXml.getParent)
-      if (!Files.exists(bspXml)) {
-        Files.writeString(bspXml, bspSbtIgnore)
-        System.err.println(s"Installed ${bspXml}")
-      }
+        val bspXml = Path.of(pwd, ".idea", "bsp.xml")
+        Files.createDirectories(bspXml.getParent)
+        if (!Files.exists(bspXml)) {
+          Files.writeString(bspXml, bspSbtIgnore)
+          System.err.println(s"Installed ${bspXml}")
+        }
 
-      if (!Files.exists(Path.of(pwd, ".bloop"))) {
-        System.err.println("Make sure you run sbt bloopInstall after this")
+        if (!Files.exists(Path.of(pwd, ".bloop"))) {
+          System.err.println("Make sure you run sbt bloopInstall after this")
+        }
       }
     }
-  }
+    .as(ExitCode.Success)
 
-  @main
-  def bloop(@arg version: String = RifleBuildInfo.version, @arg stopServerOnExit: Boolean = false, @arg waitForConnectionSeconds: Int = 30): Unit = {
-    val pwd = Path.of(Properties.userDir)
+  val threadResource =
+    Resource.make(IO.delay(BloopThreads.create()))(t => IO.blocking(t.shutdown()))
 
-    if (Files.exists(pwd.resolve(".bloop"))) {
-      val config: BloopRifleConfig = Bloop.configFor(version, pwd)
-      val threads = BloopThreads.create()
-
-      val logger = new MyBloopRifleLogger(config)
-      val (connection, onComplete) = Await.result(Bloop.connect(version, pwd, logger, threads), waitForConnectionSeconds.seconds)
+  private def handleSocket(socket: Socket): Resource[IO, PumpStreamHandler] =
+    Resource.make(IO.delay {
       val handler = new PumpStreamHandler(System.out, System.err, System.in)
-      handler.setProcessOutputStream(connection.getInputStream)
-      handler.setProcessInputStream(connection.getOutputStream)
+      handler.setProcessInputStream(socket.getOutputStream)
+      handler.setProcessOutputStream(socket.getInputStream)
       handler.start()
-      val latch = new CountDownLatch(1)
+      handler
+    })(h => IO.blocking(h.stop()))
 
-      Runtime.getRuntime.addShutdownHook(new Thread(() => {
-        System.err.println("Shutting down")
-        safeClose("socket", connection.close())
-        safeClose("handler", handler.stop())
-        safeClose("threads", threads.shutdown())
-        safeClose("conComplete", {
-          Await.result(onComplete.future, 1.minute)
-        })
-        if (stopServerOnExit) {
-          safeClose("process", {
+  def bloop(opts: EmbeddedBloopOptions, pwd: Path): IO[ExitCode] = {
+    val resources = for {
+      config <- Resource.eval(Bloop.configFor(opts.version, pwd))
+      logger = new MyBloopRifleLogger(config)
+      threads <- threadResource
+      socket <- Bloop.connect(opts.version, pwd, logger, threads).timeout(opts.waitForConnection)
+      _ <- handleSocket(socket)
+    } yield ExitCode.Success
+
+    resources.onFinalize {
+      Bloop.configFor(opts.version, pwd).flatMap { config =>
+        IO.whenA(opts.stopOnExit) {
+          IO.blocking {
+            val logger = new MyBloopRifleLogger(config)
             BloopRifle.exit(config, config.workingDir.toPath, logger)
             util.deleteDirectory(config.workingDir.toPath.resolve("bsp"))
-          })
+          }
         }
-        latch.countDown()
-      }))
-      latch.await()
+      }
     }
 
-    else {
-      System.err.println("No .bloop directory in cwd, please run:\nsbt bloopInstall")
-      sys.exit(1)
+    IO.blocking {
+      Files.exists(pwd.resolve(".bloop"))
+    }.flatMap(exist =>
+      if (exist) resources.useForever
+      else
+        IO.consoleForIO
+          .errorln("No .bloop directory in cwd, please run:\\nsbt bloopInstall")
+          .as(ExitCode(1)))
+  }
+
+  def exit: IO[ExitCode] =
+    Bloop.configFor(RifleBuildInfo.version, Path.of(Properties.userDir)).flatMap { config =>
+      IO.blocking(BloopRifle.exit(config, config.workingDir.toPath, new MyBloopRifleLogger(config)))
+        .map(ExitCode.apply)
     }
-  }
-
-  @main def exit(): Unit = {
-    val config = Bloop.configFor(RifleBuildInfo.version, Path.of(Properties.userDir))
-    val exitCode = BloopRifle.exit(config, config.workingDir.toPath, new MyBloopRifleLogger(config))
-    sys.exit(exitCode)
-  }
-
-  def main(args: Array[String]): Unit = {
-    ParserForMethods(this).runOrExit(args.toIndexedSeq)
-  }
-
-  private def safeClose(name: String, run: => Unit): Unit = {
-    try {
-      run
-    } catch {
-      case NonFatal(e) =>
-        System.err.println(s"Closed ${name}, but error occured")
-        e.printStackTrace(System.err)
-    }
-  }
 }
