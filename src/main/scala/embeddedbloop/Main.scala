@@ -63,7 +63,7 @@ object Main
         val currentExecutable = ProcessHandle.current().info().command().get()
 
         val executable = if (currentExecutable.contains("mise")) {
-          List("mise", "x", "embedded-bloop")
+          List("mise", "x", "ubi:hamnis/embedded-bloop@latest", "--", "embedded-bloop")
         } else if (currentExecutable.contains("java")) {
           List("embedded-bloop")
         } else {
