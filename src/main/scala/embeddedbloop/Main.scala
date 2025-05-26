@@ -6,6 +6,7 @@ import com.monovore.decline.*
 import com.monovore.decline.effect.CommandIOApp
 import bloop.rifle.*
 import cats.effect.{ExitCode, IO, Resource}
+import coursier.cache.shaded.dirs.ProjectDirectories
 import internal.BuildInfo as RifleBuildInfo
 import io.circe.syntax.EncoderOps
 import org.apache.commons.exec.PumpStreamHandler
@@ -39,12 +40,15 @@ object Main
     val waitForConnection = Opts
       .option[FiniteDuration]("wait-for-connection", "Wait the duration for connection to server")
       .withDefault(30.seconds)
+    val executableOverride = Opts
+      .option[String]("executable-override", "Use this name for the executable")
+      .orNone
     val options: Opts[EmbeddedBloopOptions] =
       (bloopVersion, stopServerOnExit, waitForConnection).mapN(EmbeddedBloopOptions.apply)
 
     Opts.subcommands(
       Command("setup-ide", "Installs embedded-bloop as bsp connection file")(
-        (options, disableSbtBloop).mapN(setup)
+        (options, disableSbtBloop, executableOverride).mapN(setup)
       ),
       Command("bloop", "Runs the embedded-bloop as a bsp server and connection")(
         options.map(opts => IO.delay(Path.of(Properties.userDir)).flatMap(cwd => bloop(opts, cwd)))
@@ -55,20 +59,15 @@ object Main
     )
   }
 
-  def setup(options: EmbeddedBloopOptions, disableSbtBloop: Boolean): IO[ExitCode] =
+  def setup(
+      options: EmbeddedBloopOptions,
+      disableSbtBloop: Boolean,
+      executableOverride: Option[String]): IO[ExitCode] =
     Bloop.fetchBloopFrontend(options.version) >> IO
       .blocking {
         val pwd = Properties.userDir
         val bloopPath = Path.of(pwd, ".bsp", "bloop.json")
-        val currentExecutable = ProcessHandle.current().info().command().get()
-
-        val executable = if (currentExecutable.contains("mise")) {
-          List("mise", "x", "embedded-bloop")
-        } else if (currentExecutable.contains("java")) {
-          List("embedded-bloop")
-        } else {
-          List(currentExecutable)
-        }
+        val executable = executableOverride.orElse(detectExecutable)
         val connectionFile = Bloop.ConnectionFile.default(
           options.version,
           List(
@@ -118,6 +117,26 @@ object Main
         }
       }
       .as(ExitCode.Success)
+
+  private def detectExecutable: Option[String] = {
+    val currentExecutable = ProcessHandle.current().info().command().get()
+
+    if (currentExecutable.contains("ubi-hamnis-embedded-bloop")) {
+      val project = ProjectDirectories.from(null, null, "mise")
+      val localMise = Path.of(project.dataLocalDir)
+      val version = cli.build.BuildInfo.projectVersion.getOrElse("0.1.1")
+      val latestForMajor = version.substring(0, 1)
+      Some(
+        localMise
+          .resolve(s"installs/ubi-hamnis-embedded-bloop/${latestForMajor}/embedded-bloop")
+          .toString
+      )
+    } else if (currentExecutable.contains("java")) {
+      Some("embedded-bloop")
+    } else {
+      Some(currentExecutable)
+    }
+  }
 
   val threadResource =
     Resource.make(IO.delay(BloopThreads.create()))(t => IO.blocking(t.shutdown()))
