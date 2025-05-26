@@ -9,6 +9,7 @@ This will create graal native images, so we should be able to make bloop easier 
 ## Installation
 
 ### Download using mise
+
 Get mise [here](https://mise.jdx.dev/).
 
 ```
@@ -20,7 +21,6 @@ mise use "ubi:hamnis/embedded-bloop@latest"
 If you download the file on macos using a browser, make sure you allow it to run by running
 
 `xattr -d com.apple.quarantine /path/to/downloaded-file`
-
 
 You also have to make sure you make this executable
 

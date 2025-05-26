@@ -6,12 +6,11 @@ import java.nio.file.{FileVisitResult, Files, Path, SimpleFileVisitor}
 
 object util {
 
-  def deleteDirectory(resolved: Path): Unit = {
+  def deleteDirectory(resolved: Path): Unit =
     if (Files.isDirectory(resolved)) {
       Files.walkFileTree(resolved, DeletingFileVisitor)
       Files.deleteIfExists(resolved)
     }
-  }
 
   private object DeletingFileVisitor extends SimpleFileVisitor[Path] {
     @throws[IOException]
@@ -27,9 +26,10 @@ object util {
     }
 
     @throws[IOException]
-    override def postVisitDirectory(dir: Path, exc: IOException): FileVisitResult = if (exc == null) {
-      Files.delete(dir)
-      FileVisitResult.CONTINUE
-    } else throw exc
+    override def postVisitDirectory(dir: Path, exc: IOException): FileVisitResult =
+      if (exc == null) {
+        Files.delete(dir)
+        FileVisitResult.CONTINUE
+      } else throw exc
   }
 }
