@@ -48,7 +48,7 @@ jobs:
       - name: Build native image
         run: |
           mkdir -p target
-          scala-cli package --native-image --graalvm-jvm-id graalvm-community@21 -o target/embedded-bloop-${{matrix.platform}} . -- --no-fallback --strict-image-heap -march=native --enable-https
+          scala-cli package --native-image --graalvm-jvm-id graalvm-community@21 -o target/embedded-bloop-${{matrix.platform}} . -- --no-fallback --strict-image-heap --enable-https
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
