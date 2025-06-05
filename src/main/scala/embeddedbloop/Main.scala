@@ -122,8 +122,12 @@ object Main
     val currentExecutable = ProcessHandle.current().info().command().get()
 
     if (currentExecutable.contains("ubi-hamnis-embedded-bloop")) {
-      val project = ProjectDirectories.from(null, null, "mise")
-      val localMise = Path.of(project.dataLocalDir)
+      val localMise = if (Properties.isWin) {
+        val project = ProjectDirectories.from(null, null, "mise")
+        Path.of(project.dataLocalDir)
+      } else {
+        Path.of(Properties.userHome).resolve(".local/share/mise")
+      }
       val version = cli.build.BuildInfo.projectVersion.getOrElse("0.1.1")
       val latestForMajor = version.substring(0, 1)
       Some(
