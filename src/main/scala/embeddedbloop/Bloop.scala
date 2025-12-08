@@ -2,7 +2,7 @@ package embeddedbloop
 
 import bloop.rifle.*
 import cats.effect.{IO, Resource, Temporal}
-import coursier.cache.shaded.dirs.ProjectDirectories
+import coursier.paths.shaded.dirs.ProjectDirectories
 import coursier.{Dependency, Module, ModuleName, Organization, VersionConstraint}
 import io.circe.Codec
 
