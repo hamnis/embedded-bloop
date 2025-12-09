@@ -3,3 +3,4 @@
 .scala-build
 target
 out
+.metals

@@ -6,7 +6,7 @@ import com.monovore.decline.*
 import com.monovore.decline.effect.CommandIOApp
 import bloop.rifle.*
 import cats.effect.{ExitCode, IO, Resource}
-import coursier.cache.shaded.dirs.ProjectDirectories
+import coursier.paths.shaded.dirs.ProjectDirectories
 import internal.BuildInfo as RifleBuildInfo
 import io.circe.syntax.EncoderOps
 import org.apache.commons.exec.PumpStreamHandler
