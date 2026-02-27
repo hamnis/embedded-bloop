@@ -20,15 +20,15 @@ jobs:
           - os: ubuntu-latest
             platform: x86_64-unknown-linux
             extension: "tar.xz"
-            package_command: (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-${{ VERSION }}-${{ matrix.platform }}.${{ matrix.extension }} *)
+            package_command: (cd ./target/${{ platform }} && tar -cJf ../embedded-bloop-$VERSION-${{ platform }}.${{ extension }} *)
           - os: windows-latest
             platform: x86_64-pc-windows
             extension: ".zip"
-            package_command: (cd ./binaries/${{ matrix.platform }} && zip ../embedded-bloop-${{ VERSION }}-${{ matrix.platform }}.${{ matrix.extension }} *)
+            package_command: (cd ./binaries/${{ platform }} && zip ../embedded-bloop-$VERSION-${{ platform }}.${{ extension }} *)
           - os: macos-latest
             platform: aarch64-apple-darwin
             extension: "tar.xz"
-            package_command: (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-${{ VERSION }}-${{ matrix.platform }}.${{ matrix.extension }} *)
+            package_command: (cd ./target/${{ platform }} && tar -cJf ../embedded-bloop-$VERSION-${{ platform }}.${{ extension }} *)
 
     runs-on: ${{ matrix.os }}
     steps:
