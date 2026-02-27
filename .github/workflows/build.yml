@@ -52,9 +52,9 @@ jobs:
           scala-cli package --native-image --graalvm-jvm-id graalvm-community@21 -o target/${{ matrix.platform }}/embedded-bloop . -- --no-fallback --strict-image-heap --enable-https
           OS=${{ matrix.os }}
           if [[ "$OS" == "windows-latest" ]]; then
-            (cd ./target/${{ platform }} && zip ../embedded-bloop-$VERSION-${{ platform }}.${{ extension }} *)
+            (cd ./target/${{ matrix.platform }} && zip ../embedded-bloop-$VERSION-${{ matrix.platform }}.${{ matrix.extension }} *)
           else
-            (cd ./target/${{ platform }} && tar -cJf ../embedded-bloop-$VERSION-${{ platform }}.${{ extension }} *)
+            (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-$VERSION-${{ matrix.platform }}.${{ matrix.extension }} *)
           fi
 
       - name: Upload artifacts
