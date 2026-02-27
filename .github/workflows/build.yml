@@ -47,10 +47,12 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: Build native image
-        shell: bash
         run: |
           mkdir -p target/${{ matrix.platform }}
           scala-cli package --native-image --graalvm-jvm-id graalvm-community@21 -o target/${{ matrix.platform }}/embedded-bloop . -- --no-fallback --strict-image-heap --enable-https
+      - name: Package
+        shell: bash
+        run: |
           OS=${{ matrix.os }}
           if [[ "$OS" == "windows-latest" ]]; then
             (cd ./target/${{ matrix.platform }} && zip ../embedded-bloop-$VERSION-${{ matrix.platform }}.${{ matrix.extension }} *)
