@@ -50,15 +50,18 @@ jobs:
         run: |
           mkdir -p target/${{ matrix.platform }}
           scala-cli package --native-image --graalvm-jvm-id graalvm-community@21 -o target/${{ matrix.platform }}/embedded-bloop . -- --no-fallback --strict-image-heap --enable-https
-      - name: Package
-        shell: bash
+
+      - name: Package (Windows)
+        if: ${{matrix.os == 'windows-latest' }}
         run: |
-          OS=${{ matrix.os }}
-          if [[ "$OS" == "windows-latest" ]]; then
-            (cd ./target/${{ matrix.platform }} && tar acvf ../embedded-bloop-$VERSION-${{ matrix.platform }}.${{ matrix.extension }} *)
-          else
-            (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-$VERSION-${{ matrix.platform }}.${{ matrix.extension }} *)
-          fi
+          cd ./target/${{ matrix.platform }} 
+          tar acvf ../embedded-bloop-$VERSION-${{ matrix.platform }}.${{ matrix.extension }} *
+
+      - name: Package (Unix)
+        shell: bash
+        if: ${{matrix.os != 'windows-latest' }}
+        run: |
+          (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-$VERSION-${{ matrix.platform }}.${{ matrix.extension }} *)
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
