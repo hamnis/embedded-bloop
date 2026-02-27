@@ -15,16 +15,20 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest, macos-15-intel ]
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
         include:
           - os: ubuntu-latest
-            platform: x86_64-pc-linux
+            platform: x86_64-unknown-linux
+            extension: "tar.xz"
+            package_command: (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-${{ steps.get_version.outputs.version }}-${{ matrix.platform }}.${{ matrix.extension }} *)
           - os: windows-latest
-            platform: x86_64-pc-windows.exe
+            platform: x86_64-pc-windows
+            extension: ".zip"
+            package_command: (cd ./binaries/${{ matrix.platform }} && zip ../embedded-bloop-${{ steps.get_version.outputs.version }}-${{ matrix.platform }}.${{ matrix.extension }} *)
           - os: macos-latest
             platform: aarch64-apple-darwin
-          - os: macos-15-intel
-            platform: x86_64-apple-darwin
+            extension: "tar.xz"
+            package_command: (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-${{ steps.get_version.outputs.version }}-${{ matrix.platform }}.${{ matrix.extension }} *)
 
     runs-on: ${{matrix.os}}
     steps:
@@ -47,13 +51,14 @@ jobs:
           echo "version=$version" >> $GITHUB_OUTPUT
       - name: Build native image
         run: |
-          mkdir -p target
-          scala-cli package --native-image --graalvm-jvm-id graalvm-community@21 -o target/embedded-bloop-${{matrix.platform}} . -- --no-fallback --strict-image-heap --enable-https
+          mkdir -p target/${{ matrix.platform }}
+          scala-cli package --native-image --graalvm-jvm-id graalvm-community@21 -o target/${{ matrix.platform }}/embedded-bloop . -- --no-fallback --strict-image-heap --enable-https
+          ${{ matrix.package_command }}
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: embedded-bloop-${{steps.get_version.outputs.version}}-${{matrix.platform}}
-          path: target/embedded-bloop-${{matrix.platform}}
+          name: embedded-bloop-${{steps.get_version.outputs.version}}-${{matrix.platform}}.${{ matrix.extension }}
+          path: target/embedded-bloop-${{steps.get_version.outputs.version}}-${{matrix.platform}}.${{ matrix.extension }}
 
   publish:
     name: Publish Artifacts
