@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [ '**', '!update/**', '!pr/**' ]
   push:
-    branches: [ '**', '!update/**', '!pr/**' ]
+    branches: [ "main" ]
     tags: [ v* ]
 
 concurrency:
@@ -20,19 +20,19 @@ jobs:
           - os: ubuntu-latest
             platform: x86_64-unknown-linux
             extension: "tar.xz"
-            package_command: (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-${{ steps.get_version.outputs.version }}-${{ matrix.platform }}.${{ matrix.extension }} *)
+            package_command: (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-${{ VERSION }}-${{ matrix.platform }}.${{ matrix.extension }} *)
           - os: windows-latest
             platform: x86_64-pc-windows
             extension: ".zip"
-            package_command: (cd ./binaries/${{ matrix.platform }} && zip ../embedded-bloop-${{ steps.get_version.outputs.version }}-${{ matrix.platform }}.${{ matrix.extension }} *)
+            package_command: (cd ./binaries/${{ matrix.platform }} && zip ../embedded-bloop-${{ VERSION }}-${{ matrix.platform }}.${{ matrix.extension }} *)
           - os: macos-latest
             platform: aarch64-apple-darwin
             extension: "tar.xz"
-            package_command: (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-${{ steps.get_version.outputs.version }}-${{ matrix.platform }}.${{ matrix.extension }} *)
+            package_command: (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-${{ VERSION }}-${{ matrix.platform }}.${{ matrix.extension }} *)
 
-    runs-on: ${{matrix.os}}
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - uses: VirtusLab/scala-cli-setup@main
         with:
           power: 'true'
@@ -41,14 +41,14 @@ jobs:
       - id: get_version
         shell: bash
         run: |
-          ref="${{github.ref}}"
+          ref="${{ github.ref }}"
           if [[ $ref =~ ^"refs/tags/v" ]]; then
             version=${ref#refs/tags/v}
           else
-            sha="${{github.sha}}"
+            sha="${{ github.sha }}"
             version=${sha:0:8}
           fi
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: Build native image
         run: |
           mkdir -p target/${{ matrix.platform }}
@@ -57,8 +57,8 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: embedded-bloop-${{steps.get_version.outputs.version}}-${{matrix.platform}}.${{ matrix.extension }}
-          path: target/embedded-bloop-${{steps.get_version.outputs.version}}-${{matrix.platform}}.${{ matrix.extension }}
+          name: embedded-bloop-${{ VERSION }}-${{ matrix.platform }}.${{ matrix.extension }}
+          path: target/embedded-bloop-${{ VERSION }}-${{ matrix.platform }}.${{ matrix.extension }}
 
   publish:
     name: Publish Artifacts
