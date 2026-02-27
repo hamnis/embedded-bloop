@@ -19,13 +19,13 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: x86_64-unknown-linux
-            extension: "tar.xz"
+            format: "tgz"
           - os: windows-latest
             platform: x86_64-pc-windows
-            extension: "zip"
+            format: "zip"
           - os: macos-latest
             platform: aarch64-apple-darwin
-            extension: "tar.xz"
+            format: "tgz"
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -50,21 +50,22 @@ jobs:
         run: |
           mkdir -p target/${{ matrix.platform }}
           scala-cli package --native-image --graalvm-jvm-id graalvm-community@21 -o target/${{ matrix.platform }}/embedded-bloop . -- --no-fallback --strict-image-heap --enable-https
+
       - name: Package
-        shell: bash
-        run: |
-          OS=${{ matrix.os }}
-          if [[ "$OS" == "windows-latest" ]]; then
-            (cd ./target/${{ matrix.platform }} && zip ../embedded-bloop-$VERSION-${{ matrix.platform }}.${{ matrix.extension }} *)
-          else
-            (cd ./target/${{ matrix.platform }} && tar -cJf ../embedded-bloop-$VERSION-${{ matrix.platform }}.${{ matrix.extension }} *)
-          fi
+        uses: somaz94/compress-decompress@v1
+        with:
+          command: compress
+          source: ./target/${{ matrix.platform }}/*
+          preserveGlobStructure: false
+          format: ${{ matrix.format }}
+          dest: './binaries'
+          destfilename: 'embedded-bloop-${{ env.VERSION }}-${{ matrix.platform }}'
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: embedded-bloop-${{ env.VERSION }}-${{ matrix.platform }}.${{ matrix.extension }}
-          path: target/embedded-bloop-${{ env.VERSION }}-${{ matrix.platform }}.${{ matrix.extension }}
+          name: compressed-archive
+          path: binaries/*
 
   publish:
     name: Publish Artifacts
